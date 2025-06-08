@@ -1,80 +1,78 @@
-const fs = require("fs");
-function solveTurnstileMin({ url, proxy }) {
+const fs = require("fs")
+
+module.exports = function solveTurnstileMax({ url, proxy }) {
   return new Promise(async (resolve, reject) => {
-    if (!url) return reject("Missing url parameter");
+    if (!url) return reject("Missing url parameter")
 
     const context = await global.browser
       .createBrowserContext({
-        proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined, // https://pptr.dev/api/puppeteer.browsercontextoptions
+        proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined
       })
-      .catch(() => null);
+      .catch(() => null)
 
-    if (!context) return reject("Failed to create browser context");
+    if (!context) return reject("Failed to create browser context")
 
-    let isResolved = false;
+    let isResolved = false
+    const timeout = global.timeOut || 60000
 
-    var cl = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       if (!isResolved) {
-        await context.close();
-        reject("Timeout Error");
+        await context.close().catch(() => {})
+        reject("Timeout Error")
       }
-    }, global.timeOut || 60000);
+    }, timeout)
 
     try {
-      const page = await context.newPage();
+      const page = await context.newPage()
 
-      if (proxy?.username && proxy?.password)
+      if (proxy?.username && proxy?.password) {
         await page.authenticate({
           username: proxy.username,
-          password: proxy.password,
-        });
-        
+          password: proxy.password
+        })
+      }
+
       await page.evaluateOnNewDocument(() => {
-        let token = null;
+        let token = null
         async function waitForToken() {
           while (!token) {
             try {
-              token = window.turnstile.getResponse();
-            } catch (e) {}
-            await new Promise((resolve) => setTimeout(resolve, 500));
+              token = window.turnstile?.getResponse?.()
+            } catch {}
+            await new Promise((r) => setTimeout(r, 500))
           }
-          var c = document.createElement("input");
-          c.type = "hidden";
-          c.name = "cf-response";
-          c.value = token;
-          document.body.appendChild(c);
+          const input = document.createElement("input")
+          input.type = "hidden"
+          input.name = "cf-response"
+          input.value = token
+          document.body.appendChild(input)
         }
-        waitForToken();
-      });
+        waitForToken()
+      })
 
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-      });
+      await page.goto(url, { waitUntil: "domcontentloaded" })
 
-      await page.waitForSelector('[name="cf-response"]', {
-        timeout: 60000,
-      });
+      await page.waitForSelector('[name="cf-response"]', { timeout })
+
       const token = await page.evaluate(() => {
-        try {
-          return document.querySelector('[name="cf-response"]').value;
-        } catch (e) {
-          return null;
-        }
-      });
-      isResolved = true;
-      clearInterval(cl);
-      await context.close();
-      if (!token || token.length < 10) return reject("Failed to get token");
-      return resolve(token);
-    } catch (e) {
-      console.log(e);
+        const el = document.querySelector('[name="cf-response"]')
+        return el?.value || null
+      })
 
+      isResolved = true
+      clearTimeout(timer)
+      await context.close().catch(() => {})
+
+      if (!token || token.length < 10) return reject("Failed to get token")
+      return resolve(token)
+
+    } catch (err) {
+      console.log(err)
       if (!isResolved) {
-        await context.close();
-        clearInterval(cl);
-        reject(e.message);
+        clearTimeout(timer)
+        await context.close().catch(() => {})
+        reject(err.message)
       }
     }
-  });
+  })
 }
-module.exports = solveTurnstileMin;
