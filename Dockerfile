@@ -1,4 +1,4 @@
-FROM node:latest
+FROM oven/bun
 
 RUN apt-get update && apt-get install -y \
     wget \
@@ -16,9 +16,9 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm update
-RUN npm install
-RUN npm i -g pm2
+RUN bun update
+RUN bun install
+RUN bun add -g pm2
 COPY . .
 
 EXPOSE 3000
