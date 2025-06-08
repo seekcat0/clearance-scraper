@@ -23,4 +23,4 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["pm2-runtime", "src/index.js"]
+CMD ["bun", "run", "src/index.js"]
