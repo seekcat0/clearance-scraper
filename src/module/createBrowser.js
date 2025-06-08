@@ -1,35 +1,37 @@
-const { connect } = require("puppeteer-real-browser")
+const { connect } = require('puppeteer-real-browser')
+
 async function createBrowser() {
+    if (global.finished) return
+
+    global.browser = null
+
     try {
-        if (global.finished == true) return
-
-        global.browser = null
-
-        // console.log('Launching the browser...');
-
         const { browser } = await connect({
             headless: false,
             turnstile: true,
             connectOption: { defaultViewport: null },
-            disableXvfb: false,
+            disableXvfb: false
         })
 
-        // console.log('Browser launched');
-
-        global.browser = browser;
+        global.browser = browser
 
         browser.on('disconnected', async () => {
-            if (global.finished == true) return
-            console.log('Browser disconnected');
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            await createBrowser();
+            if (global.finished) return
+            console.log('Browser disconnected')
+            await delay(3000)
+            await createBrowser()
         })
 
-    } catch (e) {
-        console.log(e.message);
-        if (global.finished == true) return
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        await createBrowser();
+    } catch (err) {
+        console.log(err.message)
+        if (global.finished) return
+        await delay(3000)
+        await createBrowser()
     }
 }
+
+function delay(ms) {
+    return new Promise(res => setTimeout(res, ms))
+}
+
 createBrowser()
