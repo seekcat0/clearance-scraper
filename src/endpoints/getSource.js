@@ -1,60 +1,62 @@
-function getSource({ url, proxy }) {
+module.exports = function getSource({ url, proxy }) {
   return new Promise(async (resolve, reject) => {
-    if (!url) return reject("Missing url parameter");
+    if (!url) return reject("Missing url parameter")
+
     const context = await global.browser
       .createBrowserContext({
-        proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined, // https://pptr.dev/api/puppeteer.browsercontextoptions
+        proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined
       })
-      .catch(() => null);
-    if (!context) return reject("Failed to create browser context");
+      .catch(() => null)
 
-    let isResolved = false;
+    if (!context) return reject("Failed to create browser context")
 
-    var cl = setTimeout(async () => {
+    let isResolved = false
+    const timeout = global.timeOut || 60000
+
+    const timer = setTimeout(async () => {
       if (!isResolved) {
-        await context.close();
-        reject("Timeout Error");
+        await context.close().catch(() => {})
+        reject("Timeout Error")
       }
-    }, global.timeOut || 60000);
+    }, timeout)
 
     try {
-      const page = await context.newPage();
+      const page = await context.newPage()
 
-      if (proxy?.username && proxy?.password)
+      if (proxy?.username && proxy?.password) {
         await page.authenticate({
           username: proxy.username,
-          password: proxy.password,
-        });
+          password: proxy.password
+        })
+      }
 
-      await page.setRequestInterception(true);
-      page.on("request", async (request) => request.continue());
+      await page.setRequestInterception(true)
+      page.on("request", req => req.continue())
+
       page.on("response", async (res) => {
-        try {
-          if (
-            [200, 302].includes(res.status()) &&
-            [url, url + "/"].includes(res.url())
-          ) {
-            await page
-              .waitForNavigation({ waitUntil: "load", timeout: 5000 })
-              .catch(() => {});
-            const html = await page.content();
-            await context.close();
-            isResolved = true;
-            clearInterval(cl);
-            resolve(html);
-          }
-        } catch (e) {}
-      });
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-      });
-    } catch (e) {
+        if (
+          [200, 302].includes(res.status()) &&
+          [url, url + "/"].includes(res.url())
+        ) {
+          try {
+            await page.waitForNavigation({ waitUntil: "load", timeout: 5000 }).catch(() => {})
+            const html = await page.content()
+            clearTimeout(timer)
+            isResolved = true
+            await context.close().catch(() => {})
+            resolve(html)
+          } catch {}
+        }
+      })
+
+      await page.goto(url, { waitUntil: "domcontentloaded" })
+
+    } catch (err) {
       if (!isResolved) {
-        await context.close();
-        clearInterval(cl);
-        reject(e.message);
+        clearTimeout(timer)
+        await context.close().catch(() => {})
+        reject(err.message)
       }
     }
-  });
+  })
 }
-module.exports = getSource;
