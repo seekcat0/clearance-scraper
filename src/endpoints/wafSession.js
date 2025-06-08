@@ -1,80 +1,97 @@
 async function findAcceptLanguage(page) {
-  return await page.evaluate(async () => {
-    const result = await fetch("https://httpbin.org/get")
-      .then((res) => res.json())
-      .then(
-        (res) =>
-          res.headers["Accept-Language"] || res.headers["accept-language"]
-      )
-      .catch(() => null);
-    return result;
-  });
+  try {
+    const res = await page.evaluate(async () => {
+      try {
+        const data = await fetch("https://httpbin.org/get").then(res => res.json())
+        return data.headers["Accept-Language"] || data.headers["accept-language"] || null
+      } catch {
+        return null
+      }
+    })
+    return res
+  } catch {
+    return null
+  }
 }
 
-function getSource({ url, proxy }) {
+module.exports = function getWafSession({ url, proxy }) {
   return new Promise(async (resolve, reject) => {
-    if (!url) return reject("Missing url parameter");
+    if (!url) return reject("Missing url parameter")
+
     const context = await global.browser
       .createBrowserContext({
-        proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined, // https://pptr.dev/api/puppeteer.browsercontextoptions
+        proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined
       })
-      .catch(() => null);
-    if (!context) return reject("Failed to create browser context");
+      .catch(() => null)
 
-    let isResolved = false;
+    if (!context) return reject("Failed to create browser context")
 
-    var cl = setTimeout(async () => {
+    let isResolved = false
+    const timeout = global.timeOut || 60000
+
+    const timer = setTimeout(async () => {
       if (!isResolved) {
-        await context.close();
-        reject("Timeout Error");
+        await context.close().catch(() => {})
+        reject("Timeout Error")
       }
-    }, global.timeOut || 60000);
+    }, timeout)
 
     try {
-      const page = await context.newPage();
+      const page = await context.newPage()
 
-      if (proxy?.username && proxy?.password)
+      if (proxy?.username && proxy?.password) {
         await page.authenticate({
           username: proxy.username,
-          password: proxy.password,
-        });
-      let acceptLanguage = await findAcceptLanguage(page);
-      await page.setRequestInterception(true);
-      page.on("request", async (request) => request.continue());
-      page.on("response", async (res) => {
-        try {
-          if (
-            [200, 302].includes(res.status()) &&
-            [url, url + "/"].includes(res.url())
-          ) {
-            await page
-              .waitForNavigation({ waitUntil: "load", timeout: 5000 })
-              .catch(() => {});
-            const cookies = await page.cookies();
-            let headers = await res.request().headers();
-            delete headers["content-type"];
-            delete headers["accept-encoding"];
-            delete headers["accept"];
-            delete headers["content-length"];
-            headers["accept-language"] = acceptLanguage;
-            await context.close();
-            isResolved = true;
-            clearInterval(cl);
-            resolve({ cookies, headers });
-          }
-        } catch (e) {}
-      });
+          password: proxy.password
+        })
+      }
 
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-      });
-    } catch (e) {
+      const acceptLanguage = await findAcceptLanguage(page)
+
+      await page.setRequestInterception(true)
+
+      page.on("request", request => request.continue())
+
+      page.on("response", async response => {
+        try {
+          const resUrl = response.url()
+          if (
+            [200, 302].includes(response.status()) &&
+            [url, url + "/"].includes(resUrl)
+          ) {
+            await page.waitForNavigation({ waitUntil: "load", timeout: 5000 }).catch(() => {})
+
+            const cookies = await page.cookies()
+            const headers = { ...response.request().headers() }
+
+            delete headers["content-type"]
+            delete headers["accept-encoding"]
+            delete headers["accept"]
+            delete headers["content-length"]
+
+            if (acceptLanguage) {
+              headers["accept-language"] = acceptLanguage
+            }
+
+            isResolved = true
+            clearTimeout(timer)
+            await context.close().catch(() => {})
+
+            resolve({ cookies, headers })
+          }
+        } catch {
+          // Silent error
+        }
+      })
+
+      await page.goto(url, { waitUntil: "domcontentloaded" })
+
+    } catch (err) {
       if (!isResolved) {
-        await context.close();
-        clearInterval(cl);
-        reject(e.message);
+        clearTimeout(timer)
+        await context.close().catch(() => {})
+        reject(err.message)
       }
     }
-  });
+  })
 }
-module.exports = getSource;
